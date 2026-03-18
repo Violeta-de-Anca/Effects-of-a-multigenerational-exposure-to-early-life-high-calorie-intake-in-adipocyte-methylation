@@ -12,7 +12,29 @@ library(data.table)
 # BiocManager::install("karyoploteR", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
 library(GenomicRanges)
 library(karyoploteR, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
-
+require(devtools)
+# devtools::install_github("MiguelCastresana/anubix", lib="/crex/proj/naiss2024-23-57/reference_genomes")
+library(ANUBIX , lib.loc = "/crex/proj/naiss2024-23-57/reference_genomes")
+# install.packages("neat", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(neat, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+# install.packages("gprofiler2", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(gprofiler2, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(KEGGgraph)
+library(KEGGREST)
+# devtools::install_github("noriakis/ggkegg", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(ggkegg, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+# install.packages("ggfx", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(ggfx, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(ggraph)
+library(igraph)
+library(clusterProfiler)
+library(tidygraph)
+library(msigdbr)
+library(org.Mm.eg.db)
+# install.packages("pathfindR", lib="/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(pathfindR, lib.loc = "/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/bin/")
+library(biomaRt)
+library(UpSetR)
 setwd("/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto")
 set.seed(123)
 
@@ -459,6 +481,448 @@ plot_data_heatmap(male_57,view = "single_view",factor = 10,features = 100, show_
 plot_data_heatmap(female_57,view = "single_view",factor = 9,features = 100, show_rownames =F,
                   show_colnames=T,cluster_rows=T,cluster_cols=F)
 
+#we did with bedtools the gene annotation and the transcript factor annotation #####
+#import the gene list of all factors
+gene_names_factor_8=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/annotated_ROIs/final_unique_all_gene_names_TF_UCSC_mm39_factor_8.txt",col.names = "SYMBOL")
+gene_names_factor_9=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/annotated_ROIs/final_unique_all_gene_names_TF_UCSC_mm39_factor_9.txt",col.names = "SYMBOL")
+gene_names_factor_10=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/annotated_ROIs/final_unique_all_gene_names_TF_UCSC_mm39_factor_10.txt",col.names = "SYMBOL")
+
+#we then need to switch to uniprot IDs, this are the reviewed #####
+listEnsembl()
+ensembl=useEnsembl(biomart = "ensembl")
+listDatasets(mart = ensembl)
+grep("unipr",listAttributes(mart = ensembl_id))
+ensembl_id=useEnsembl("genes",dataset = "mmusculus_gene_ensembl")
+uniprot_F8=getBM(
+  attributes = c("mgi_symbol","uniprotswissprot"),
+  filters = "mgi_symbol",
+  values = gene_names_factor_8$SYMBOL,
+  mart = ensembl_id
+)%>%filter(uniprotswissprot!="")%>%dplyr::rename(
+  SYMBOL=mgi_symbol,
+  UNIPROT=uniprotswissprot
+)
+
+uniprot_F9=getBM(
+  attributes = c("mgi_symbol","uniprotswissprot"),
+  filters = "mgi_symbol",
+  values = gene_names_factor_9$SYMBOL,
+  mart = ensembl_id
+)%>%filter(uniprotswissprot!="")%>%dplyr::rename(
+  SYMBOL=mgi_symbol,
+  UNIPROT=uniprotswissprot
+)
+
+uniprot_F10=getBM(
+  attributes = c("mgi_symbol","uniprotswissprot"),
+  filters = "mgi_symbol",
+  values = gene_names_factor_10$SYMBOL,
+  mart = ensembl_id
+)%>%filter(uniprotswissprot!="")%>%dplyr::rename(
+  SYMBOL=mgi_symbol,
+  UNIPROT=uniprotswissprot
+)
+
+
+# Then for the gene names we don't get in the review uniprot database ######
+missing_f8=gene_names_factor_8%>%distinct(SYMBOL)%>%anti_join(uniprot_F8%>%distinct(SYMBOL),by = c("SYMBOL"))
+not_primary_F8=AnnotationDbi::select(org.Mm.eg.db,keys = as.character(missing_f8$SYMBOL),
+                  columns = c("UNIPROT","SYMBOL"),keytype = "SYMBOL")%>%distinct(UNIPROT,SYMBOL,.keep_all = T)%>%
+  filter(!is.na(UNIPROT))
+to_add_f8=not_primary_F8%>%group_by(SYMBOL)%>%filter(
+  case_when(
+    SYMBOL == "Raph1" ~T,
+    SYMBOL %in% c("Il1rapl1","Lhfpl3","Sntg1") ~ row_number() == 2,
+    SYMBOL == "Lrrc70" ~UNIPROT == "Q80TE7",
+    SYMBOL == "Scml2" ~ UNIPROT == "B1AVB3",
+    T ~ row_number() == 1
+  )
+)%>%ungroup()
+uniprot_F8=rbind(uniprot_F8,to_add_f8)
+uniprot_F8$factor="factor_8"
+
+
+missing_f9=gene_names_factor_9%>%distinct(SYMBOL)%>%anti_join(uniprot_F9%>%distinct(SYMBOL),by = c("SYMBOL"))
+not_primary_F9=AnnotationDbi::select(org.Mm.eg.db,keys = as.character(missing_f9$SYMBOL),
+                      columns = c("UNIPROT","SYMBOL"),keytype = "SYMBOL")%>%distinct(UNIPROT,SYMBOL,.keep_all = T)%>%
+  filter(!is.na(UNIPROT))
+to_add_f9=not_primary_F9%>%group_by(SYMBOL)%>%filter(
+  case_when(
+    SYMBOL %in% c("Il1rapl1") ~ row_number() == 2,
+    T ~ row_number() == 1
+  )
+)%>%ungroup()
+uniprot_F9=rbind(uniprot_F9,to_add_f9)
+uniprot_F9$factor="factor_9"
+
+missing_f10=gene_names_factor_10%>%distinct(SYMBOL)%>%anti_join(uniprot_F10%>%distinct(SYMBOL),by = c("SYMBOL"))
+not_primary_F10=AnnotationDbi::select(org.Mm.eg.db,keys = as.character(missing_f10$SYMBOL),
+                      columns = c("UNIPROT","SYMBOL"),keytype = "SYMBOL")%>%distinct(UNIPROT,SYMBOL,.keep_all = T)%>%
+  filter(!is.na(UNIPROT))
+to_add_f10=not_primary_F10%>%group_by(SYMBOL)%>%filter(
+  case_when(
+    SYMBOL == "Abi3bp" ~ UNIPROT == "A0A338P6S8",
+    SYMBOL == "Opcml" ~ UNIPROT == "G5E8G3",
+    SYMBOL == "Nlrp4g" ~ UNIPROT == "",
+    T ~ row_number() == 1
+  )
+)%>%ungroup()
+uniprot_F10=rbind(uniprot_F10,to_add_f10)
+uniprot_F10$factor="factor_10"
+
+# funcoup=fread("/proj/naiss2024-23-57/reference_genomes/neural_network/FC6.0_M.musculus_full")
+funcoup_compact=fread("/proj/naiss2024-23-57/reference_genomes/neural_network/FC6.0_M.musculus_compact")
+#filtar solo las de calidad, min 0.95, high confidence
+# funcoup_compact=funcoup_compact%>%filter(`5:PPV`>0.9)
+
+#and now we can start with the enrichment analysis #######
+factor_list=list(
+  F8=uniprot_F8[,c("UNIPROT","factor")],
+  F9=uniprot_F9[,c("UNIPROT","factor")],
+  F10=uniprot_F10[,c("UNIPROT","factor")]
+)
+db_list=c("CP:KEGG","CP:REACTOME","CP:WIKIPATHWAYS")
+funcoup=as.data.frame(funcoup_compact[,c(1:2,6)])
+
+prepare_pathways=function(subcat){
+  pathways=msigdbr(species = "Mus musculus",category ="C2",subcategory = subcat)%>%
+    distinct(gs_name,gene_symbol,.keep_all = T)
+  mapped_symbols_to_unipro=getBM(
+    attributes = c("mgi_symbol","uniprotswissprot"),
+    filters = "mgi_symbol",
+    values = pathways$gene_symbol,
+    mart = ensembl_id
+  )%>%filter(uniprotswissprot!="")%>%dplyr::rename(
+    gene_symbol=mgi_symbol,
+    UNIPROT=uniprotswissprot
+  )
+  pathways=pathways%>%left_join(mapped_symbols_to_unipro,by="gene_symbol",relationship = "many-to-many")
+  uniprot_names_pathways=pathways[,c("UNIPROT","gs_name")]%>%
+    distinct(UNIPROT,gs_name,.keep_all = T)%>%filter(!is.na(UNIPROT))
+  return(uniprot_names_pathways)
+}
+
+results= list()
+
+for(db in db_list){
+  cat("Running:",db,"\n")
+  uniprot_names_pathways=prepare_pathways(db)
+  anubix_links_matrix=ANUBIX::anubix_links(
+    network = funcoup,
+    pathways = as.data.frame(uniprot_names_pathways)
+  )
+  cat("Anubix finished","\n")
+  results[[db]]=list()
+  for(f_name in names(factor_list)){
+    cat(" Running", f_name,"\n")
+    geneset_df=factor_list[[f_name]]
+    trans_res=anubix_transitivity(network= funcoup, 
+                                  pathways= as.data.frame(uniprot_names_pathways),
+                                  links_matrix = anubix_links_matrix, 
+                                  genesets = geneset_df)%>%
+      filter(`q-value`<0.05)
+    cat(" Running normal anubix","\n")
+    anubix_res=anubix(network= funcoup, 
+                      pathways= as.data.frame(uniprot_names_pathways),
+                      links_matrix = anubix_links_matrix, 
+                      genesets = geneset_df)%>%
+      filter(`q-value`<0.05)
+    results[[db]][[f_name]]=list(transitivity=trans_res,
+                                 anubix_normal=anubix_res)
+  }
+  cat("Finished","\n")
+}
+
+save(results,file = "/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/anubix_kegg_reactome_wikipathways_all_factors_annotated.rda")
+load("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/anubix_kegg_reactome_wikipathways_all_factors_annotated.rda")
+
+enrichment_f8=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/FunCoup_enrichment_factor8.tsv")
+enrichment_f9=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/FunCoup_enrichment_factor9.tsv")
+enrichment_f10=fread("/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/FunCoup_enrichment_factor10.tsv")
+
+enrichment_f10$factor="factor_10"
+enrichment_f9$factor="factor_9"
+enrichment_f8$factor="factor_8"
+
+enrichment_all_factors=full_join(enrichment_f8,enrichment_f9,by = "Pathway_ID")
+enrichment_all_factors=full_join(enrichment_all_factors,enrichment_f10,by = "Pathway_ID")
+
+#plot the enrichment score by pathway ID ####
+pathway_common_all_f=enrichment_all_factors%>%filter(if_all(everything(), ~ !is.na(.)))
+
+
+enrichment_all_factors_1=enrichment_all_factors%>%transmute(
+  Pathway_ID,
+  Pathway_Name_1=Pathway_Name,
+  Pathway_Name_2= Pathway_Name.x,
+  Pathway_Name_3=Pathway_Name.y,
+  factor_1=factor,
+  factor_2=factor.x,
+  factor_3=factor.y,
+  ANUBIX_FDR_1=ANUBIX_FDR,
+  ANUBIX_FDR_2=ANUBIX_FDR.x,
+  ANUBIX_FDR_3=ANUBIX_FDR.y
+)%>%
+  mutate(
+  Pathway_Name = coalesce(Pathway_Name_1,Pathway_Name_2,Pathway_Name_3))%>%
+  dplyr::select(-Pathway_Name_1,-Pathway_Name_2,-Pathway_Name_3)%>%pivot_longer(
+    cols = c(factor_1,factor_2,factor_3,ANUBIX_FDR_1,ANUBIX_FDR_2,ANUBIX_FDR_3),
+    names_to = c(".value","set"),
+    names_pattern = "(factor|ANUBIX_FDR)_(\\d)"
+  )%>%
+  dplyr::select(Pathway_ID,Pathway_Name,factor,ANUBIX_FDR)%>%filter(!is.na(factor))
+
+all_paths=ggplot(enrichment_all_factors_1,aes(x=ANUBIX_FDR,y=Pathway_Name))+
+  geom_point(aes(color=factor),size=5)+
+  labs(x="FDR",y="",title = "",color="Significant factors\nfrom MEFISTO")+
+  theme_minimal()+
+  scale_x_reverse()+
+  theme(
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    legend.text = element_text(size = 15),
+    legend.position = "right",
+    legend.title =  element_text(size = 18)
+  )+
+  scale_colour_manual(values = c("factor_10" = "#0072B2","factor_9" = "#D55E00", "factor_8" = "#009E73"))
+
+tiff(filename = "/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/enrichment_fdr_all_factors.tiff",
+     height = 4000, width = 2500, res = 150)
+all_paths
+dev.off()
+
+
+overlap_all=list(
+  factor_8=enrichment_f8$Pathway_Name,
+  factor_9=enrichment_f9$Pathway_Name,
+  factor_10=enrichment_f10$Pathway_Name
+)
+
+tiff(filename = "/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/enrichment_overlapp_all_factors.tiff",
+     height = 1500, width = 1700, res = 150)
+upset(fromList(overlap_all),order.by = "freq",text.scale = 3)
+dev.off()
+
+#overlapp factor 8 with factor 9
+overlap_f8andf9=inner_join(enrichment_f8,enrichment_f9,by = "Pathway_ID")
+overlap_f8andf10=inner_join(enrichment_f8,enrichment_f10,by = "Pathway_ID")
+overlap_f10andf9=inner_join(enrichment_f10,enrichment_f9,by = "Pathway_ID")
+
+#Now I want to plot the insulin and metabolism related pathways: ####
+mm39_pathways=get_gene_sets_list(org_code =  "mmu")
+# 4911 (Insulin secretion) this is in overlapp 8 and 10 #### 
+insulin_4911 = names(mm39_pathways$descriptions)[mm39_pathways$descriptions == "Insulin secretion"]
+insulin_4911_id=mm39_pathways$gene_sets[[insulin_4911]]
+insulin_4911_id=sub("mmu:","",insulin_4911_id)
+#get the genes in uniprot ID
+insulin_4911_genes=bitr(insulin_4911_id,
+                        fromType = "ENTREZID",
+                        toType = "UNIPROT",
+                        OrgDb = org.Mm.eg.db)
+
+funcoup_uniprotA=data.frame(UNIPROT = funcoup_compact$`0:ProteinA`,
+                            other_UNIPROT = funcoup_compact$`1:ProteinB`)
+insulin_4911_unipro_funcoupA=left_join(insulin_4911_genes,funcoup_uniprotA,by = "UNIPROT")
+#which genes are affected in factor 8
+links_insulin_4911_f8=uniprot_F8%>%inner_join(insulin_4911_unipro_funcoupA%>%
+                                            pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                         names_to = "link_source",
+                                                         values_to = "uniprot_genes")%>%
+                                            distinct(uniprot_genes,.keep_all = T),
+                                          by = c("UNIPROT" = "uniprot_genes"))
+#which genes are affected in factor 10
+links_insulin_4911_f10=uniprot_F10%>%inner_join(insulin_4911_unipro_funcoupA%>%
+                                                pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                             names_to = "link_source",
+                                                             values_to = "uniprot_genes")%>%
+                                                distinct(uniprot_genes,.keep_all = T),
+                                              by = c("UNIPROT" = "uniprot_genes"))
+
+# 4931 (Insulin resistance) this is in overlapp 8 and 9 #####
+insulin_4931 = names(mm39_pathways$descriptions)[mm39_pathways$descriptions == "Insulin resistance"]
+insulin_4931_id=mm39_pathways$gene_sets[[insulin_4931]]
+insulin_4931_id=sub("mmu:","",insulin_4931_id)
+insulin_4931_genes=bitr(insulin_4931_id,
+                        fromType = "ENTREZID",
+                        toType = "UNIPROT",
+                        OrgDb = org.Mm.eg.db)
+insulin_4931_unipro_funcoupA=left_join(insulin_4931_genes,funcoup_uniprotA,by = "UNIPROT")
+#which genes are affected in factor 8
+links_insulin_4931_f8=uniprot_F8%>%inner_join(insulin_4931_unipro_funcoupA%>%
+                                                pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                             names_to = "link_source",
+                                                             values_to = "uniprot_genes")%>%
+                                                distinct(uniprot_genes,.keep_all = T),
+                                              by = c("UNIPROT" = "uniprot_genes"))
+#which genes are affected in factor 9
+links_insulin_4931_f9=uniprot_F9%>%inner_join(insulin_4931_unipro_funcoupA%>%
+                                                pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                             names_to = "link_source",
+                                                             values_to = "uniprot_genes")%>%
+                                                distinct(uniprot_genes,.keep_all = T),
+                                              by = c("UNIPROT" = "uniprot_genes"))
+
+# 1522 (Endocrine resistance) in overlapp 8 and 9 #####
+endocrine_1522 = names(mm39_pathways$descriptions)[mm39_pathways$descriptions == "Endocrine resistance"]
+endocrine_1522_id=mm39_pathways$gene_sets[[endocrine_1522]]
+endocrine_1522_id=sub("mmu:","",endocrine_1522_id)
+endocrine_1522_genes=bitr(endocrine_1522_id,
+                        fromType = "ENTREZID",
+                        toType = "UNIPROT",
+                        OrgDb = org.Mm.eg.db)
+endocrine_1522_unipro_funcoupA=left_join(endocrine_1522_genes,funcoup_uniprotA,by = "UNIPROT")
+#which genes are affected in factor 8
+links_endocrine_1522_f8=uniprot_F8%>%inner_join(endocrine_1522_unipro_funcoupA%>%
+                                                pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                             names_to = "link_source",
+                                                             values_to = "uniprot_genes")%>%
+                                                distinct(uniprot_genes,.keep_all = T),
+                                              by = c("UNIPROT" = "uniprot_genes"))
+#which genes are affected in factor 9
+links_endocrine_1522_f9=uniprot_F9%>%inner_join(endocrine_1522_unipro_funcoupA%>%
+                                                pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                             names_to = "link_source",
+                                                             values_to = "uniprot_genes")%>%
+                                                distinct(uniprot_genes,.keep_all = T),
+                                              by = c("UNIPROT" = "uniprot_genes"))
+
+
+# 4919 (Thyroid hormone signaling pathway) only in factor 10 #####
+insulin_4919 = names(mm39_pathways$descriptions)[mm39_pathways$descriptions == "Thyroid hormone signaling pathway"]
+insulin_4919_id=mm39_pathways$gene_sets[[insulin_4919]]
+insulin_4919_id=sub("mmu:","",insulin_4919_id)
+insulin_4919_genes=bitr(insulin_4919_id,
+                        fromType = "ENTREZID",
+                        toType = "UNIPROT",
+                        OrgDb = org.Mm.eg.db)
+
+
+# 4930 (Type II diabetes mellitus) supposedly in fator 8 ####
+diabetes= names(mm39_pathways$descriptions)[mm39_pathways$descriptions == "Type II diabetes mellitus"]
+diabetes_id=mm39_pathways$gene_sets[[diabetes]]
+diabetes_id=sub("mmu:","",diabetes_id)
+diabetes_genes=bitr(diabetes_id,
+                        fromType = "ENTREZID",
+                        toType = "SYMBOL",
+                        OrgDb = org.Mm.eg.db)
+
+# diabetes_path=pathway(diabetes)
+# to print the actual pathway
+# pathway(diabetes) |>
+#   activate(nodes) |>
+#   mutate(convert_mmu=convert_id("mmu"),
+#          convert_map=convert_id("pathway")) |>
+#   ggraph(x=x, y=y)+
+#   geom_edge_parallel(arrow = arrow(length = unit(1,"mm")),
+#                      aes(linetype=subtype_name),
+#                      end_cap=circle(7.5,"mm"))+
+#   geom_node_rect(aes(filter = type=="gene",
+#                      fill = I(bgcolor)),
+#                  color="black")+
+#   geom_node_text(aes(label = convert_mmu),
+#                  size=5,family="serif")+
+#   theme_void()
+
+diabetes_genes=bitr(diabetes_id,
+                    fromType = "ENTREZID",
+                    toType = "UNIPROT",
+                    OrgDb = org.Mm.eg.db)
+
+funcoup_uniprotA=data.frame(UNIPROT = funcoup_compact$`0:ProteinA`,
+                            other_UNIPROT = funcoup_compact$`1:ProteinB`)
+
+diabetes_unipro_funcoupA=left_join(diabetes_genes,funcoup_uniprotA,by = "UNIPROT")
+links_diabetes_f8=uniprot_F8%>%inner_join(diabetes_unipro_funcoupA%>%
+                                            pivot_longer(cols = c(UNIPROT,other_UNIPROT),
+                                                                                  names_to = "link_source",
+                                                                                  values_to = "uniprot_genes")%>%
+                                            distinct(uniprot_genes,.keep_all = T),
+                                          by = c("UNIPROT" = "uniprot_genes"))
+
+
+#############################################
+#this is for doing it individually ######
+# get the metabolic pathways ###
+# collections=msigdbr_collections()
+# print(collections,n = 40)
+# metabolic_pathways=msigdbr(species = "Mus musculus",category ="C2",subcategory = "CP:KEGG")%>%
+#   distinct(gs_name,gene_symbol,.keep_all = T)
+# #the gene symbol is different from ncbi to uniprot that is found in funcoup, so we need to liftover the ncbi gene names to uniprot
+# mm_gene_symbol=metabolic_pathways$entrez_gene
+# mapped_symbols_to_unipro=select(org.Mm.eg.db,keys = as.character(mm_gene_symbol),columns = c("ENTREZID","UNIPROT","SYMBOL"),keytype = "ENTREZID")
+# mapped_symbols_to_unipro$gene_symbol=mapped_symbols_to_unipro$SYMBOL
+# metabolic_pathways=metabolic_pathways%>%left_join(mapped_symbols_to_unipro,by="gene_symbol")
+# uniprot_names_pathways=metabolic_pathways[,c("UNIPROT","gs_name")]%>%
+#   distinct(UNIPROT,gs_name,.keep_all = T)
+# 
+# #network es funcoup columnas 1 y 2, pathways es kegg los q te interesen
+# anubix_links=anubix_links(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                           pathways= as.data.frame(uniprot_names_pathways))
+# 
+# 
+# clustering_factor_8=anubix_clustering(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                       pathways= as.data.frame(uniprot_names_pathways),
+#                                       links_matrix = anubix_links, 
+#                                       genesets = uniprot_F8[,c("UNIPROT","factor")])
+#   
+# clustering_factor_9=anubix_clustering(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                       pathways= as.data.frame(uniprot_names_pathways),
+#                                       links_matrix = anubix_links, 
+#                                       genesets = uniprot_F9[,c("UNIPROT","factor")])
+# 
+# clustering_factor_10=anubix_clustering(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                       pathways= as.data.frame(uniprot_names_pathways),
+#                                       links_matrix = anubix_links, 
+#                                       genesets = uniprot_F10[,c("UNIPROT","factor")])
+# 
+#   
+# transivity_factor_8=anubix_transitivity(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                         pathways= as.data.frame(uniprot_names_pathways),
+#                                         links_matrix = anubix_links, 
+#                                         genesets = uniprot_F8[,c("UNIPROT","factor")])
+# transivity_factor_8=transivity_factor_8%>%filter(`q-value`<0.05)
+# anubix_F8=anubix(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                  pathways= as.data.frame(uniprot_names_pathways),
+#                  links_matrix = anubix_links, 
+#                  genesets = uniprot_F8[,c("UNIPROT","factor")])
+# anubix_F8=anubix_F8%>%filter(`q-value`<0.05)
+# 
+# transivity_factor_9=anubix_transitivity(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                         pathways= as.data.frame(uniprot_names_pathways),
+#                                         links_matrix = anubix_links, 
+#                                         genesets = uniprot_F9[,c("UNIPROT","factor")])
+# transivity_factor_9=transivity_factor_9%>%filter(`q-value`<0.05)
+# 
+# anubix_F9=anubix(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                  pathways= as.data.frame(uniprot_names_pathways),
+#                  links_matrix = anubix_links, 
+#                  genesets = uniprot_F9[,c("UNIPROT","factor")])
+# anubix_F9=anubix_F9%>%filter(`q-value`<0.05)
+# 
+# transivity_factor_10=anubix_transitivity(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                                         pathways= as.data.frame(uniprot_names_pathways),
+#                                         links_matrix = anubix_links, 
+#                                         genesets = uniprot_F10[,c("UNIPROT","factor")])
+# transivity_factor_10=transivity_factor_10%>%filter(`q-value`<0.05)
+# 
+# anubix_F10=anubix(network= as.data.frame(funcoup_compact[,c(1:2,6)]), 
+#                  pathways= as.data.frame(uniprot_names_pathways),
+#                  links_matrix = anubix_links, 
+#                  genesets = uniprot_F10[,c("UNIPROT","factor")])
+# anubix_F10=anubix_F10%>%filter(`q-value`<0.05)
+
+
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
 ########################################################
 # load("/crex/proj/naiss2024-23-57/C57_female_lineage_adipocytes/mefisto/first_c57_no_groups_mefisto_object.rda")
 # relational_table_C571=relational_table_C57%>%

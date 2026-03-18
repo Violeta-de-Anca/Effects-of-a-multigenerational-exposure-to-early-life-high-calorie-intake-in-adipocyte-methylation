@@ -2,9 +2,9 @@
 ##SBATCH -A uppmax2025-2-302
 #SBATCH -A uppmax2025-2-536
 #SBATCH -p pelle
-#SBATCH --mem 256GB
-#SBATCH -t 5-00:00:00
-#SBATCH -J mefisto
+#SBATCH --mem 150GB
+#SBATCH -t 3-00:00:00
+#SBATCH -J mef_sex
 #SBATCH --error /proj/naiss2024-23-57/C57_female_lineage_adipocytes/log_files/mefisto_sex_run.err
 #SBATCH --output /proj/naiss2024-23-57/C57_female_lineage_adipocytes/log_files/mefisto_sex_run.out
 

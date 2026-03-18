@@ -31,3 +31,7 @@ zcat $ucsc_input | bedtools intersect -a $annotated_folder/${a}_UCSC_genes.bed -
 cut -f 11 $annotated_folder/mefisto_${a}_remap.bed > $annotated_folder/transcript_fact_${a}_remap_name.txt
 
 cat $annotated_folder/${a}_UCSC_gene_names.bed $annotated_folder/transcript_fact_${a}_remap_name.txt > $annotated_folder/all_genetic_features_names_${a}.txt
+
+sed -n 's/.*gene_id "\([^"]*\)".*/\1/p' $annotated_folder/all_genetic_features_names_${a}.txt | sort -u > $annotated_folder/unique_genetic_features_names_${a}.txt
+
+cut -f 11 $annotated_folder/mefisto_${a}_remap.bed | cut -f 1 -d ":" | sort -u | cat $annotated_folder/unique_genetic_features_names_${a}.txt - > $annotated_folder/final_unique_all_gene_names_TF_UCSC_mm39_${a}.txt
